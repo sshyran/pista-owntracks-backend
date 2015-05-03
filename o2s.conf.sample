@@ -242,7 +242,7 @@ listen_port = 8080
 
 # Array of page names which should be visible from the pista menu.
 # Chose any from
-#   ['about', 'map', 'table', 'tracks', 'console', 'status', 'hw', 'jobs', 'jobedit' ]
+#   ['about', 'map', 'table', 'tracks', 'console', 'status', 'hw', 'jobs', 'jobedit', 'activo' ]
 
 pages = ['about', 'map', 'table', 'tracks', 'console', 'status', 'hw' ]
 

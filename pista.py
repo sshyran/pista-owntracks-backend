@@ -317,6 +317,10 @@ def page_about():
 def page_jobedit():
     return template('jobedit', pistapages=cf.g('pista', 'pages'))
 
+@app.route('/activo')
+def page_activo():
+    return template('activo', pistapages=cf.g('pista', 'pages'), isdemo=cf.g('pista', 'is_demo'))
+
 @app.route('/console')
 @auth_basic(check_auth)
 def page_console():
