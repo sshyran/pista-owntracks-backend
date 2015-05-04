@@ -488,7 +488,7 @@ def on_job(mosq, userdata, msg):
             # handle this active job change event
             on_activejob(mosq, msg, base_topic)
         elif last_part == 'currentjob':
-	    # skip current jobs w/o timestamp
+            # skip current jobs w/o timestamp
             pass
         else:
             # update the job name list
@@ -650,7 +650,7 @@ def on_currentjob(mosq, msg, device, timestamp):
             if job*10000 + task in tasknames:
                 jobname = jobname + ' ' + tasknames[job* 10000 + task]
                 if place in placenames:
-               	    jobname = jobname + ' ' + placenames[place]
+                    jobname = jobname + ' ' + placenames[place]
                     if machine in machinenames:
                         jobname = jobname + ' ' + machinenames[machine]
         else:
@@ -679,6 +679,7 @@ def on_currentjob(mosq, msg, device, timestamp):
                 jb.end = nowstr
                 jb.duration = jobduration
                 jb.save()
+    		log.debug("_job: finish {0} {1}".format(jobname, nowstr))
             except Job.DoesNotExist:
                 log.error("Received 'end' event for job with no active row")
             except Exception, e:
@@ -696,6 +697,7 @@ def on_currentjob(mosq, msg, device, timestamp):
                 }
                 jb = Job(**data)
                 jb.save()
+    		log.debug("_job: start {0} {1}".format(jobname, nowstr))
             except Exception, e:
                 log.error("Cannot store JOB for topic {0}: {1}".format(msg.topic, str(e)))
  
@@ -835,18 +837,18 @@ def watcher(mosq, topic, data):
     fmt = u"%-14s %-32s %s"
 
     if type(data) is not dict:
-	human = can2human(str(topic), str(data))
+        human = can2human(str(topic), str(data))
 
-	if human != None:
-		s = fmt % (tstamp, topic, human)
-		bb = bytearray(s.encode('utf-8'))
-		mosq.publish(wt, bb, qos=0, retain=False)
-		return
-	else:
-		s = fmt % (tstamp, topic, data)
-		bb = bytearray(s.encode('utf-8'))
-		mosq.publish(wt, bb, qos=0, retain=False)
-		return
+        if human != None:
+                s = fmt % (tstamp, topic, human)
+                bb = bytearray(s.encode('utf-8'))
+                mosq.publish(wt, bb, qos=0, retain=False)
+                return
+        else:
+                s = fmt % (tstamp, topic, data)
+                bb = bytearray(s.encode('utf-8'))
+                mosq.publish(wt, bb, qos=0, retain=False)
+                return
 
     time_str = None
 

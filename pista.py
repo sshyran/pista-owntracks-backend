@@ -27,7 +27,7 @@ from owntracks.ElementTree_pretty import prettify
 import time
 from owntracks import cf
 import paho.mqtt.client as paho
-from owntracks.dbschema import db, Geo, Location, Waypoint, User, Acl, Inventory, JOIN_LEFT_OUTER, fn, createalltables, dbconn, RAWdata
+from owntracks.dbschema import db, Geo, Location, Waypoint, User, Acl, Inventory, JOIN_LEFT_OUTER, fn, createalltables, dbconn, RAWdata, Job
 from owntracks.auth import PistaAuth
 from owntracks import haversine
 import pytz
@@ -166,6 +166,60 @@ def getDBdata(usertid, from_date, to_date, spacing, tzname='UTC'):
 
     log.info("getDBdata: FROM={0}, TO={1} returns {2} points for {3}".format(from_date, to_date, len(track), usertid))
     return track
+
+
+def getjobDBdata(usertid, from_date, to_date, tzname='UTC'):
+
+    joblist = []
+
+    from_date = normalize_date(from_date)
+    to_date   = normalize_date(to_date)
+    from_date = "%s 00:00:00" % from_date
+    to_date = "%s 23:59:59" % to_date
+
+    from_date = utc_time(from_date, tzname)
+    to_date = utc_time(to_date, tzname)
+
+    log.debug("getjobDBdata: FROM={0}, TO={1}".format(from_date, to_date))
+
+    dbconn()
+    query = (Job
+                .select(Job)
+                .where(
+                    (Job.tid == usertid) &
+                    (Job.start < to_date) &
+                    (Job.end > from_date)
+                )
+            )
+
+    query = query.order_by(Job.id.asc())
+    for j in query.naive():
+
+        try:
+            job = {
+                'id'        : j.id,
+                'topic'     : j.topic,
+                'tid'       : j.tid,
+                'job'       : j.job,
+                'jobname'   : j.jobname,
+                'duration'  : j.duration,
+            }
+
+            if j.start is not None:
+                dt = datetime.strptime(str(j.start), "%Y-%m-%d %H:%M:%S")
+                s = dt.strftime('%Y-%m-%d %H:%M:%S')
+                job['start'] = s
+            if j.end is not None:
+                dt = datetime.strptime(str(j.end), "%Y-%m-%d %H:%M:%S")
+                s = dt.strftime('%Y-%m-%d %H:%M:%S')
+                job['end'] = s
+
+            joblist.append(job)
+        except:
+            raise
+            pass
+
+    return joblist
 
 def getDBwaypoints(usertid, lat_min, lat_max, lon_min, lon_max):
 
@@ -317,10 +371,6 @@ def page_about():
 def page_jobedit():
     return template('jobedit', pistapages=cf.g('pista', 'pages'))
 
-@app.route('/activo')
-def page_activo():
-    return template('activo', pistapages=cf.g('pista', 'pages'), isdemo=cf.g('pista', 'is_demo'))
-
 @app.route('/console')
 @auth_basic(check_auth)
 def page_console():
@@ -402,6 +452,18 @@ def page_tracks():
         isdemo = 0
 
     return template('tracks', pistapages=cf.g('pista', 'pages'), have_xls=HAVE_XLS, isdemo=isdemo)
+
+@app.route('/activo')
+@auth_basic(check_auth)
+def page_activo():
+
+    isdemo = isdemo=cf.g('pista', 'is_demo')
+    if isdemo == True:
+        isdemo = 1
+    else:
+        isdemo = 0
+
+    return template('activo', pistapages=cf.g('pista', 'pages'), have_xls=HAVE_XLS, isdemo=isdemo)
 
 @app.route('/hello')
 def hello():
@@ -735,6 +797,185 @@ def get_download():
     response.headers['Content-Length'] = str(octets)
 
     return s.getvalue()
+
+# ?usertid=XX&fromdate=2014-08-19&todate=2014-08-20&format=txt
+@app.route('/api/downloadjob', method='GET')
+@auth_basic(check_auth)
+def get_downloadjob():
+    mimetype = {
+        'csv':  'text/csv',
+        'txt':  'text/plain',
+        'xls':  'application/vnd.ms-excel',
+    }
+
+    EOL = "\n"
+    os = 'unknown'
+    user_agent = request.environ.get('HTTP_USER_AGENT')
+
+    try:
+        os = httpagentparser.detect(user_agent)['os']['name'].upper()
+    except:
+        pass
+
+    if os == 'WINDOWS':
+        EOL = "\r\n"
+
+    log.debug("client OS = {0} ({1})".format(os, user_agent))
+
+    current_user = request.auth[0]
+
+    usertid = request.params.get('usertid')
+    from_date = request.params.get('fromdate')
+    to_date = request.params.get('todate')
+    fmt = request.params.get('format')
+    tzname = request.params.get('tzname', 'UTC')
+
+    from_date = normalize_date(from_date)
+    to_date   = normalize_date(to_date)
+
+    # before allowing download check for usertid auth
+    usertids = getusertids(current_user)
+    if usertid not in usertids:
+        log.warn("User {0} is not authorized to download data for tid={1}".format(current_user, usertid))
+        return notauth(reason="Not authorized for this TID")
+
+    if fmt not in mimetype:
+        return { 'error' : "Unsupported download-type requested" }
+
+    joblistname = 'owntracksActivo-%s-%s-%s' % (usertid, from_date, to_date)
+
+    joblist =  getjobDBdata(usertid, from_date, to_date, tzname)
+
+    sio = StringIO()
+    s = codecs.getwriter('utf8')(sio)
+
+    if fmt == 'txt':
+
+        s.write("%-30s %-30s %-30s %s%s" % ("Job", "Start".format(tzname), "End".format(tzname), "Duration (s)", EOL))
+
+        for job in joblist:
+
+            s.write(u'%-30s %-30s %-30s %s%s' % \
+                (job.get('jobname'),
+                job.get('start'),
+                job.get('end', ""),
+                job.get('duration', ""),
+                EOL))
+
+    if fmt == 'csv':
+
+        job = joblist[0]
+        title = ""
+        for key in job.keys():
+            title = title + u'"%s",' % key
+
+        s.write("%s%s" % (title[0:-1], EOL))  # chomp last separator
+
+        for job in joblist:
+            line = ""
+            for key in job:
+                line = line + u'"%s",' % job[key]
+
+            line = line[0:-1]   # chop last separator
+            s.write(u'%s%s' % (line, EOL))
+
+    if fmt == 'xls':
+        if not HAVE_XLS:
+            return  # FIXME
+
+        cols = [ 'jobname', 'start', 'end', 'duration' ]
+
+        font0 = xlwt.Font()
+        font0.name = 'Arial'
+        font0.colour_index = 2
+        font0.bold = True
+
+        style0 = xlwt.XFStyle()
+        style0.font = font0
+
+        courier = xlwt.Font()
+        courier.name = 'Courier New'
+        courier.bold = False
+
+        fixed_style = xlwt.XFStyle()
+        fixed_style.font = courier
+
+
+        date_style = xlwt.XFStyle()
+        date_style.num_format_str = 'D-MMM-YY HH:MM:SS'
+
+        wb = xlwt.Workbook(encoding='utf-8')
+        ws = wb.add_sheet('OwnTracksActivo')
+
+        coldesc = {
+                           # Width, Heading,
+            'jobname'    : [ 30,     "Jobname" ],
+            'start'      : [ 25,     "Start" ],
+            'end'        : [ 25,     "End" ],
+            'duration'   : [ None,   "Duration (s)" ],
+        }
+        for c, txt in enumerate(cols):      # Heading
+            if txt in coldesc:
+                width, heading = coldesc[txt]
+                if width is None:
+                    width = len(heading)
+                if width < len(heading):
+                    width = len(heading)
+
+                ws.col(c).width = 256 * width
+                if heading is not None:
+                    ws.write(0, c, heading, style0)
+                else:
+                    ws.write(0, c, txt, style0)
+            else:
+                ws.write(0, c, txt, style0)
+
+        r = 1
+        for job in joblist:
+            ws.write(r, 0, job.get('jobname'))
+            ws.write(r, 1, job.get('start'), date_style)
+            ws.write(r, 2, job.get('end'), date_style)
+            ws.write(r, 3, job.get('duration'))
+            r = r + 1
+
+        r = r + 2
+        ws.write(r, 0, xlwt.Formula('HYPERLINK("http://owntracks.de";"OwnTracks.de")'),
+                xlwt.easyxf(
+                    'font: name Arial;'
+                    'font: color red;'
+                    'font: underline single;'
+                ))
+
+        wb.save(sio)
+
+    content_type = 'application/binary'
+    if fmt in mimetype:
+        content_type = mimetype[fmt]
+
+    octets = len(s.getvalue())
+
+    response.content_type = content_type
+    response.headers['Content-Disposition'] = 'attachment; filename="%s.%s"' % (joblistname, fmt)
+    response.headers['Content-Length'] = str(octets)
+
+    return s.getvalue()
+
+# ?usertid=XX&fromdate=2014-08-19&todate=2014-08-20
+@app.route('/api/getjoblist', method='POST')
+@auth_basic(check_auth)
+def get_joblist():
+    data = json.load(bottle.request.body)
+
+    # needs LOTS of error handling
+
+    usertid = data.get('usertid')
+    from_date = data.get('fromdate')
+    to_date = data.get('todate')
+    tzname = request.params.get('tzname', 'UTC')
+
+    joblist = getjobDBdata(usertid, from_date, to_date, tzname)
+
+    return json.dumps(joblist)
 
 @app.route('/api/getGeoJSON', method='POST')
 @auth_basic(check_auth)
