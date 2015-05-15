@@ -4,6 +4,7 @@
 
 <link href="activo/activo-style.css" rel="stylesheet">
 <script src="activo/jstz.min.js" type="text/javascript"></script>
+<script src="js/moment.min.js" type="text/javascript"></script>
 <script src="config.js" type="text/javascript"></script>
 <link rel="stylesheet" media="screen" href="handsontable/handsontable.full.css">
 <script src="handsontable/handsontable.full.js"></script>
@@ -19,7 +20,7 @@
 			<p class='description'>
 			Select a <acronym title="Tracker-ID">TID</acronym>
 			and a date or a range of dates. Then
-			click one of the options below to show in spreadsheet or download data.
+			click below to show in spreadsheet.
 			</p>
 			Tracker ID: <select id='usertid'></select><br/>
 		</div>
@@ -27,15 +28,6 @@
 		<div id='datepick'></div>
 
 		<div><a href='#' id='getsheet'>Show spreadsheet</a></div>
-
-		<div>
-			Download
-				[<a href='#' fmt='txt' class='download'>TXT</a>]
-				[<a href='#' fmt='csv' class='download'>CSV</a>]
-%if have_xls == True:
-				[<a href='#' fmt='xls' class='download'>XLS</a>]
-%end
-		</div>
 
          </div>
 
@@ -78,7 +70,7 @@
 				multidateSeparator: ',',
 				todayHighlight: true,
 			}).on('changeDate', function(e){
-				console.log( "UTC=" + JSON.stringify($('#datepick').datepicker('getUTCDates' ))  );
+				//console.log( "UTC=" + JSON.stringify($('#datepick').datepicker('getUTCDates' ))  );
 				d = $('#datepick').datepicker('getUTCDates' );
 
 				var d1;
@@ -112,35 +104,153 @@
 				return s
 			}
 
-			function calendar(fromdate, todate, data) {
-				var columns = [
-					{ data: 'time', readOnly: true },
-				];
-				var columnHeaders = [
-					'Time'
-				];
-				var calendarData = [];
-				for (i = 0; i < 24 * 3600; i += 30 * 60) {
-					var timeString = new Date(i * 1000).toLocaleTimeString();
-					calendarData[calendarData.length] = { time: timeString };
+			function duration(ticks) {
+				var durationString = "";
+				if (ticks >= 24 * 60 * 60) {
+					days = Math.floor(ticks / (24 * 60 * 60));	
+					durationString = days + "d ";	
+					ticks -= days * 24 * 60 * 60;	
 				}
+				if (ticks >= 60 * 60) {
+					hours = Math.floor(ticks / (60 * 60));	
+					durationString = durationString + hours + "h ";	
+					ticks -= hours * 60 * 60;	
+				}
+				if (ticks >= 60) {
+					minutes = Math.floor(ticks / 60);	
+					durationString = durationString + minutes + "m ";	
+					ticks -= minutes * 60;	
+				}
+				if (ticks >= 1) {
+					seconds = Math.floor(ticks);	
+					durationString = durationString + seconds + "s ";	
+				} else {
+					durationString = durationString + "0s";
+				}
+				return durationString;
+			}
 
-				for (date = fromdate; date <= todate; date.setDate(date.getDate() + 1)) {
-					var dateString = date.toLocaleDateString();
-					columns[columns.length] = { data: dateString, readOnly: true };
-					columnHeaders[columnHeaders.length] = dateString;
+			function summary(fromdate, todate, data) {
+				var	summaryData = [];
+				var	status = 'off';
+				var     start = moment(fromdate).unix();
+
+				function process(point) {
+					var newStatus = status;
+					if (point.t == 'f') {
+						newStatus = 'on';
+					} else if (point.t == 't') {
+						newStatus = 'driving';
+					} else if (point.t == 'T') {
+						newStatus = 'on';
+					} else if (point.t == 'k') {
+						newStatus = 'on';
+					} else if (point.t == 'v') {
+						newStatus = 'driving';
+					} else if (point.t == 'l') {
+						newStatus = 'driving';
+					} else if (point.t == 'L') {
+						newStatus = 'off';
+					} else {
+						newStatus = 'off';
+					}
+
+					var summary = null;
+					var index = 0;
+					for (index = 0; index < summaryData.length; index++) {
+						if (summaryData[index].status == status) {
+							summary = summaryData[index];
+							break;
+						}
+					}
+					if (summary == null) {
+						summary = {}; 
+						summary.status = status;
+						summary.duration = 0.0;
+					}
+					var epoch = moment(point.tst).unix();
+					//console.log("summary " + summary.status + " " + summary.duration + " " + epoch + " " + start);
+					summary.duration = summary.duration + epoch - start;
+					summaryData[index] = summary;
+					status = newStatus;
+					start = epoch;
 				}
 
 				for (pointno in data) {
-					var point = data[pointno];
-					/* do the work here */
+					process(data[pointno]);
+				}
+				endOfDay = todate;
+				endOfDay.setHours(23, 59, 59, 999);
+				process({t:"L", tst:endOfDay});
+
+				for (index = 0; index < summaryData.length; index++) {
+					summaryData[index].duration = duration(summaryData[index].duration);
+				}
+
+				var	summaryContainer = document.getElementById('summary'),
+					summarySettings = {
+						data: summaryData,
+						rowHeaders: false,
+						colHeaders: ['Status', 'Total (s)'],
+						columns: [
+							{ data: 'status', readOnly: true },
+							{ data: 'duration', readOnly: true },
+						]
+					},
+					summaryHot;
+		  
+				summaryHot = new Handsontable(summaryContainer, summarySettings);
+				summaryHot.render();
+			}
+
+			function calendar(fromdate, todate, data) {
+				var start = moment(fromdate).unix();
+				var columns = [];
+				var columnHeaders = [];
+				var rowHeaders = [];
+				var calendarData = [];
+
+				for (i = 0; i < 24 ; i++) {
+					rowHeaders[rowHeaders.length] = i;
+				}
+
+				dayoffset = 0;
+				for (date = fromdate; date <= todate; date.setDate(date.getDate() + 1)) {
+					key = "T" + dayoffset;
+					columns[columns.length] = { data: key, readOnly: true };
+					for (i = 0; i < 24 ; i++) {
+						if (calendarData.length > i) {
+							row = calendarData[i];
+						} else {
+							row = {};
+						}
+						row[key] = "";
+						calendarData[i] = row;
+					}
+					var dateString = date.toLocaleDateString();
+					columnHeaders[columnHeaders.length] = dateString;
+					dayoffset++;
+				}
+
+				for (pointno in data) {
+					point = data[pointno];
+					epoch = moment(point.tst).unix();
+					offset = epoch - start;
+					dayoffset = Math.floor(offset / (24 * 60 * 60));
+					houroffset = Math.floor((offset % (24 * 60 * 60)) / (60 * 60));
+					if (dayoffset >= 0 && houroffset >= 0) {
+						row = calendarData[houroffset];
+						key = "T" + dayoffset;
+						row[key] = row[key] + point.t;
+						calendarData[houroffset] = row;
+					}
 				}
 
 				var	calendarContainer = document.getElementById('calendar'),
 					calendarSettings = {
 						data: calendarData,
-						rowHeaders: true,
 						colHeaders: columnHeaders,
+					        rowHeaders: rowHeaders,
 						columns: columns
 					},
 					calendarHot;
@@ -191,67 +301,7 @@
 						hot = new Handsontable(container, settings);
 						hot.render();
 
-						var	summaryData = [];
-						var	status = 'off';
-						var     start = new Date($('#fromdate').val());
-
-						for (pointno in data) {
-							var point = data[pointno];
-
-							var newStatus = status;
-							if (point.t == 'f') {
-								newStatus = 'on';
-							} else if (point.t == 't') {
-								newStatus = 'driving';
-							} else if (point.t == 'T') {
-								newStatus = 'on';
-							} else if (point.t == 'k') {
-								newStatus = 'on';
-							} else if (point.t == 'v') {
-								newStatus = 'driving';
-							} else if (point.t == 'l') {
-								newStatus = 'driving';
-							} else if (point.t == 'L') {
-								newStatus = 'off';
-							} else {
-								newStatus = 'off';
-							}
-
-							var summary = null;
-							var index = 0;
-							for (index = 0; index < summaryData.length; index++) {
-								if (summaryData[index].status == status) {
-									summary = summaryData[index];
-									break;
-								}
-							}
-							if (summary == null) {
-								summary = {}; 
-								summary.status = status;
-								summary.duration = 0.0;
-							}
-							console.log("summary " + summary.status + ' ' + summary.duration + ' ' + point.tst);
-							summary.duration = summary.duration + Date.parse(point.tst) - start;
-							summaryData[index] = summary;
-							status = newStatus;
-							start = point.tst;
-						}
-
-						var	summaryContainer = document.getElementById('summary'),
-							summarySettings = {
-								data: summaryData,
-								rowHeaders: true,
-								colHeaders: ['Status', 'Total (s)'],
-								columns: [
-									{ data: 'status', readOnly: true },
-									{ data: 'duration', readOnly: true },
-								]
-							},
-							summaryHot;
-		  
-						summaryHot = new Handsontable(summaryContainer, summarySettings);
-						summaryHot.render();
-
+						summary(new Date($('#fromdate').val()), new Date($('#todate').val()), data); 
 						calendar(new Date($('#fromdate').val()), new Date($('#todate').val()), data); 
 
 					},
@@ -261,28 +311,7 @@
 				   });
 			}
 
-			function download(format) {
-				var params = {
-					usertid: $('#usertid').children(':selected').attr('id'),
-					fromdate: $('#fromdate').val(),
-					todate: $('#todate').val(),
-					format: format,
-					tzname: tzname,
-				};
-
-				$.fileDownload('api/downloadjob', {
-					data: params,
-					successCallback: function(url) {
-						console.log("OK URL " + url);
-					},
-					failCallback: function(html, url) {
-						console.log("ERROR " + url + " " + html);
-					}
-				});
-			}
-
 			$(document).ready(function() {
-
 
 				function bindDumpButton() {
 			  
@@ -294,17 +323,10 @@
 							var name = element.getAttribute('data-dump');
 							var instance = element.getAttribute('data-instance');
 							var hot = window[instance];
-							console.log('data of ' + name, hot.getData());
+							//console.log('data of ' + name, hot.getData());
 						}
 					});
 				}
-
-				$('.download').on('click', function (e) {
-					e.preventDefault();
-					var format = $(this).attr('fmt');
-					console.log(format);
-					download(format);
-				});
 
 				$('#getsheet').on('click', function (e) {
 					e.preventDefault();
