@@ -69,6 +69,27 @@ class Location(OwntracksModel):
             (('topic', ), False),  # create index l_topic on location(topic (100));
         )
 
+class PlaceName(OwntracksModel):
+    topic           = CharField(null=False)
+    pid		    = IntegerField(null=False)
+    name            = CharField(null=True)
+
+class MachineName(OwntracksModel):
+    topic           = CharField(null=False)
+    mid		    = IntegerField(null=False)
+    name            = CharField(null=True)
+
+class JobName(OwntracksModel):
+    topic           = CharField(null=False)
+    jid		    = IntegerField(null=False)
+    name            = CharField(null=True)
+
+class TaskName(OwntracksModel):
+    topic           = CharField(null=False)
+    jid		    = IntegerField(null=False)
+    tid		    = IntegerField(null=False)
+    name            = CharField(null=True)
+
 # Last reported location per topic (topic is unique)
 class Lastloc(OwntracksModel):
     topic           = CharField(null=False, unique=True)
@@ -89,7 +110,10 @@ class Job(OwntracksModel):
     topic           = CharField(null=False)
     tid             = CharField(null=False, max_length=2)
     job             = IntegerField(null=False)
-    jobname         = CharField(null=True, max_length=20)
+    task            = IntegerField(null=False)
+    place           = IntegerField(null=False)
+    machine         = IntegerField(null=False)
+    jobname         = CharField(null=True)
     start           = DateTimeField(default=datetime.datetime.now, index=True)
     end             = DateTimeField(null=True)
     duration        = IntegerField(null=True)
@@ -226,6 +250,10 @@ def createalltables():
     if cf.g('features', 'activo', False) == True:
         try:
             Job.create_table(fail_silently=silent)
+            JobName.create_table(fail_silently=silent)
+            TaskName.create_table(fail_silently=silent)
+            PlaceName.create_table(fail_silently=silent)
+            MachineName.create_table(fail_silently=silent)
         except Exception, e:
             print str(e)
 

@@ -1,5 +1,5 @@
-% include('tbstop.tpl', page='activo', page_title='OwnTracks Activo')
-%if 'activo' in pistapages:
+% include('tbstop.tpl', page='operations', page_title='OwnTracks Operations')
+%if 'operations' in pistapages:
 
 
 <link href="activo/activo-style.css" rel="stylesheet">
@@ -17,16 +17,11 @@
                  <input type='hidden' id='todate' value='' />
 		<div>
 			<p class='description'>
-			Select a <acronym title="Tracker-ID">TID</acronym>,
-			a <acronym title="Job-ID">JID</acronym>,
-			a <acronym title="Place-ID">PID</acronym>,
-			a <acronym title="Machine-ID">MID</acronym> and a date or a range of dates. Then
+			Select a <acronym title="Tracker-ID">TID</acronym>
+			and a date or a range of dates. Then
 			click one of the options below to show in spreadsheet or download data.
 			</p>
 			Tracker ID: <select id='usertid'></select><br/>
-			Job: <select id='userjid'></select><br/>
-			Place: <select id='userpid'></select><br/>
-			Machine: <select id='usermid'></select><br/>
 		</div>
 
 		<div id='datepick'></div>
@@ -48,11 +43,11 @@
 		Summary
 		<div id="summary"></div>
 		<hr>
-		Details
-		<div id="details"></div>
-		<hr>
 		Calendar
 		<div id="calendar"></div>
+		<hr>
+		Details
+		<div id="details"></div>
 
 		<script type="text/javascript">
 
@@ -66,7 +61,6 @@
 				async: true,
 				success: function(data) {
 					$selecttid.html('');
-					$selecttid.append('<option id=0>any</option>');
 					$.each(data.userlist, function(key, val) {
 						$selecttid.append('<option id="' + val.id + '">' + val.name + '</option>');
 					})
@@ -76,58 +70,7 @@
 				}
 			});
 
-			var $selectjid = $('#userjid');
-			$.ajax({
-				type: 'GET',
-				url: 'api/joblist',
-				async: true,
-				success: function(data) {
-					$selectjid.html('');
-					$selectjid.append('<option id=0>any</option>');
-					$.each(data.joblist, function(key, val) {
-						$selectjid.append('<option id="' + val.id + '">' + val.name + '</option>');
-					})
-				},
-				error: function() {
-					$selectjid.html("none available");
-				}
-			});
-
-			var $selectpid = $('#userpid');
-			$.ajax({
-				type: 'GET',
-				url: 'api/placelist',
-				async: true,
-				success: function(data) {
-					$selectpid.html('');
-					$selectpid.append('<option id=0>any</option>');
-					$.each(data.placelist, function(key, val) {
-						$selectpid.append('<option id="' + val.id + '">' + val.name + '</option>');
-					})
-				},
-				error: function() {
-					$selectpid.html("none available");
-				}
-			});
-
-			var $selectmid = $('#usermid');
-			$.ajax({
-				type: 'GET',
-				url: 'api/machinelist',
-				async: true,
-				success: function(data) {
-					$selectmid.html('');
-					$selectmid.append('<option id=0>any</option>');
-					$.each(data.machinelist, function(key, val) {
-						$selectmid.append('<option id="' + val.id + '">' + val.name + '</option>');
-					})
-				},
-				error: function() {
-					$selectmid.html("none available");
-				}
-			});
-
-			 $('#datepick').datepicker({
+			$('#datepick').datepicker({
 				format: "yyyy-mm-dd",
 				autoclose: true,
 				weekStart: 1,       // 0=Sunday
@@ -169,7 +112,7 @@
 				return s
 			}
 
-			function calendar(fromdate, todate) {
+			function calendar(fromdate, todate, data) {
 				var columns = [
 					{ data: 'time', readOnly: true },
 				];
@@ -183,15 +126,14 @@
 				}
 
 				for (date = fromdate; date <= todate; date.setDate(date.getDate() + 1)) {
-					console.log(date);
 					var dateString = date.toLocaleDateString();
 					columns[columns.length] = { data: dateString, readOnly: true };
 					columnHeaders[columnHeaders.length] = dateString;
 				}
 
-				for (jobno in data) {
-					var job = data[jobno];
-					console.log(job);
+				for (pointno in data) {
+					var point = data[pointno];
+					/* do the work here */
 				}
 
 				var	calendarContainer = document.getElementById('calendar'),
@@ -216,52 +158,32 @@
 				$calendar.html('');
 
 				var params = {
+					usertid: $('#usertid').children(':selected').attr('id'),
 					fromdate: $('#fromdate').val(),
 					todate: $('#todate').val(),
 					tzname: tzname,
 				};
 
-				var usertid = $('#usertid').children(':selected').attr('id');
-				if (usertid != 0) {
-					params.usertid = $('#usertid').children(':selected').attr('name');
-				}
-				var userjid = $('#userjid').children(':selected').attr('id');
-				if (userjid != 0) {
-					params.userjid = userjid;
-				}
-				var userpid = $('#userpid').children(':selected').attr('id');
-				if (userpid != 0) {
-					params.userpid = userpid;
-				}
-				var usermid = $('#usermid').children(':selected').attr('id');
-				if (usermid != 0) {
-					params.usermid = usermid;
-				}
-
 				$.ajax({
 					type: 'POST',
-					url: 'api/getjoblist',
+					url: 'api/getOperations',
 					async: true,
 					data: JSON.stringify(params),
 					dataType: 'json',
 					success: function(data) {
-						// console.log(JSON.stringify(data));
+						//console.log(JSON.stringify(data));
 
 						var	container = document.getElementById('details'),
 							settings = {
 								data: data,
 								rowHeaders: true,
-								colHeaders: ['TID', 'Job', 'Task', 'Place', 'Machine', 'Name', 'Start', 'End', 'Duration (s)'],
+								colHeaders: ['Timestamp', 'T', 'Velocity', 'Distance', 'Trip'],
 								columns: [
-									{ data: 'tid', readOnly: true },
-									{ data: 'job', readOnly: true },
-									{ data: 'task', readOnly: true },
-									{ data: 'place', readOnly: true },
-									{ data: 'machine', readOnly: true },
-									{ data: 'jobname', readOnly: true },
-									{ data: 'start', readOnly: true },
-									{ data: 'end', readOnly: true },
-									{ data: 'duration', readOnly: true },
+									{ data: 'tst', readOnly: true },
+									{ data: 't', readOnly: true },
+									{ data: 'vel', readOnly: true },
+									{ data: 'dist', readOnly: true },
+									{ data: 'trip', readOnly: true },
 								]
 							},
 							hot;
@@ -270,38 +192,59 @@
 						hot.render();
 
 						var	summaryData = [];
+						var	status = 'off';
+						var     start = new Date($('#fromdate').val());
 
-						for (jobno in data) {
-							var job = data[jobno];
-							console.log(job);
+						for (pointno in data) {
+							var point = data[pointno];
+
+							var newStatus = status;
+							if (point.t == 'f') {
+								newStatus = 'on';
+							} else if (point.t == 't') {
+								newStatus = 'driving';
+							} else if (point.t == 'T') {
+								newStatus = 'on';
+							} else if (point.t == 'k') {
+								newStatus = 'on';
+							} else if (point.t == 'v') {
+								newStatus = 'driving';
+							} else if (point.t == 'l') {
+								newStatus = 'driving';
+							} else if (point.t == 'L') {
+								newStatus = 'off';
+							} else {
+								newStatus = 'off';
+							}
+
 							var summary = null;
 							var index = 0;
 							for (index = 0; index < summaryData.length; index++) {
-								if (summaryData[index].jobname == job.jobname) {
+								if (summaryData[index].status == status) {
 									summary = summaryData[index];
 									break;
 								}
 							}
 							if (summary == null) {
 								summary = {}; 
-								summary.jobname = job.jobname;
-								summary.total = 0;
+								summary.status = status;
+								summary.duration = 0.0;
 							}
-							summary.total = summary.total + job.duration;
-							console.log( index);
-							console.log( summary);
+							console.log("summary " + summary.status + ' ' + summary.duration + ' ' + point.tst);
+							summary.duration = summary.duration + Date.parse(point.tst) - start;
 							summaryData[index] = summary;
+							status = newStatus;
+							start = point.tst;
 						}
 
-						console.log( summaryData);
 						var	summaryContainer = document.getElementById('summary'),
 							summarySettings = {
 								data: summaryData,
 								rowHeaders: true,
-								colHeaders: ['Name', 'Total (s)'],
+								colHeaders: ['Status', 'Total (s)'],
 								columns: [
-									{ data: 'jobname', readOnly: true },
-									{ data: 'total', readOnly: true },
+									{ data: 'status', readOnly: true },
+									{ data: 'duration', readOnly: true },
 								]
 							},
 							summaryHot;
@@ -310,6 +253,7 @@
 						summaryHot.render();
 
 						calendar(new Date($('#fromdate').val()), new Date($('#todate').val()), data); 
+
 					},
 					error: function(xhr, status, error) {
 						alert('get: ' + status + ", " + error);
@@ -329,7 +273,7 @@
 				$.fileDownload('api/downloadjob', {
 					data: params,
 					successCallback: function(url) {
-						console.log("OK URL ", + url);
+						console.log("OK URL " + url);
 					},
 					failCallback: function(html, url) {
 						console.log("ERROR " + url + " " + html);

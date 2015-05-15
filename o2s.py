@@ -19,7 +19,7 @@ import ssl
 import json
 import socket
 from owntracks import mobile_codes
-from owntracks.dbschema import db, Location, Waypoint, RAWdata, Operators, Inventory, Job, Obd2, Fms, createalltables, dbconn, Lastloc
+from owntracks.dbschema import db, Location, Waypoint, RAWdata, Operators, Inventory, Job, Obd2, Fms, createalltables, dbconn, Lastloc, JobName, TaskName, PlaceName, MachineName
 import io
 import csv
 import imp
@@ -45,16 +45,8 @@ jobtopic = None
 devices = {}
 imeilist = {}
 jobs = {}
-jobnames = {}
-tasknames = {}
-placenames = {}
-machinenames = {}
 
 createalltables()
-jobnames[0] = ""
-tasknames[0] = ""
-placenames[0] = ""
-machinenames[0] = ""
 
 geo = RevGeo(cf.config('revgeo'), storage=storage)
 wp = None
@@ -469,6 +461,129 @@ def on_gpio(mosq, userdata, msg):
     save_rawdata(msg.topic, msg.payload)
     watcher(mosq, msg.topic, msg.payload)
 
+def get_jobname(topic, jid):
+    jn = None
+    if storage:
+        try:
+            jn = JobName.get(JobName.topic == topic, JobName.jid == jid)
+        except JobName.DoesNotExist:
+            pass
+    return jn
+
+def store_jobname(topic, jid, name):
+    if storage:
+        try:
+            jn = JobName.get(JobName.topic == topic, JobName.jid == jid)
+            jn.name = name
+            jn.save()
+    	    log.debug("_jobname: UPDATE {0} {1}".format(jid, name))
+        except JobName.DoesNotExist:
+            try:
+                data = {
+                    'topic'   : topic,
+                    'jid'     : jid,
+                    'name'    : name,
+                }
+                jn = JobName(**data)
+                jn.save()
+    		log.debug("_jobname: INSERT {0} {1}".format(jid, name))
+            except Exception, e:
+                raise
+                log.error("DB error on UPDATE JobName: {0}".format(str(e)))
+
+
+def get_placename(topic, pid):
+    pn = None
+    if storage:
+        try:
+            pn = PlaceName.get(PlaceName.topic == topic, PlaceName.pid == pid)
+        except PlaceName.DoesNotExist:
+            pass
+    return pn
+
+def store_placename(topic, pid, name):
+    if storage:
+        try:
+            pn = PlaceName.get(PlaceName.topic == topic, PlaceName.pid == pid)
+            pn.name = name
+            pn.save()
+    	    log.debug("_placename: UPDATE {0} {1}".format(pid, name))
+        except PlaceName.DoesNotExist:
+            try:
+                data = {
+                    'topic'   : topic,
+                    'pid'     : pid,
+                    'name'    : name,
+                }
+                pn = PlaceName(**data)
+                pn.save()
+    		log.debug("_jobname: INSERT {0} {1}".format(pid, name))
+            except Exception, e:
+                raise
+                log.error("DB error on UPDATE TaskName: {0}".format(str(e)))
+
+
+def get_machinename(topic, mid):
+    mn = None
+    if storage:
+        try:
+            mn = MachineName.get(MachineName.topic == topic, MachineName.mid == mid)
+        except MachineName.DoesNotExist:
+            pass
+    return mn
+
+def store_machinename(topic, mid, name):
+    if storage:
+        try:
+            mn = MachineName.get(MachineName.topic == topic, MachineName.mid == mid)
+            mn.name = name
+            mn.save()
+    	    log.debug("_machinename: UPDATE {0} {1}".format(mid, name))
+        except MachineName.DoesNotExist:
+            try:
+                data = {
+                    'topic'   : topic,
+                    'mid'     : mid,
+                    'name'    : name,
+                }
+                mn = MachineName(**data)
+                mn.save()
+    		log.debug("_machinename: INSERT {0} {1}".format(mid, name))
+            except Exception, e:
+                raise
+                log.error("DB error on UPDATE MachineName: {0}".format(str(e)))
+
+def get_taskname(topic, jid, tid):
+    tn = None
+    if storage:
+        try:
+            tn = TaskName.get(TaskName.topic == topic, TaskName.jid == jid, TaskName.tid == tid)
+        except TaskName.DoesNotExist:
+            pass
+    return tn
+
+def store_taskname(topic, jid, tid, name):
+    if storage:
+        try:
+            tn = TaskName.get(TaskName.topic == topic, TaskName.jid == jid, TaskName.tid == tid)
+            tn.name = name
+            tn.save()
+    	    log.debug("_taskname: UPDATE {0} {1} {2}".format(jid, tid, name))
+        except TaskName.DoesNotExist:
+            try:
+                data = {
+                    'topic'   : topic,
+                    'jid'     : jid,
+                    'tid'     : tid,
+                    'name'    : name,
+                }
+                tn = TaskName(**data)
+                tn.save()
+    		log.debug("_taskname: INSERT {0} {1} {2}".format(jid, tid, name))
+            except Exception, e:
+                raise
+                log.error("DB error on UPDATE TaskName: {0}".format(str(e)))
+
 def on_job(mosq, userdata, msg):
     # ignore if 'activo' hasn't been enabled
     if cf.g('features', 'activo', False) == False:
@@ -486,13 +601,12 @@ def on_job(mosq, userdata, msg):
         # suffix proxy/jobs/[currentjob|job<jobid>]
         if last_part == 'active':
             # handle this active job change event
-            on_activejob(mosq, msg, base_topic)
+            on_activejob(mosq, msg, device)
         elif last_part == 'currentjob':
             # skip current jobs w/o timestamp
             pass
         else:
-            # update the job name list
-            jobnames[int(last_part)] = msg.payload
+            store_jobname(base_topic, int(last_part), msg.payload)
 
     # topic owntracks/user/device/proxy/jobs/[job|place|machine]/<jobid>
     # topic owntracks/user/device/proxy/jobs/currentjob/<timestamp>
@@ -503,15 +617,15 @@ def on_job(mosq, userdata, msg):
             on_currentjob(mosq, msg, base_topic, timestamp)
         elif id_part == 'job':
             job = int(parts[len(parts) - 1])
-            jobnames[job] = msg.payload
+            store_jobname(base_topic, job, msg.payload)
         elif id_part == 'place':
             place = int(parts[len(parts) - 1])
             placeparts = msg.payload.split(' ')
-            placenames[place] = placeparts[0]
+            store_placename(base_topic, place, placeparts[0])
         elif id_part == 'machine':
             machine = int(parts[len(parts) - 1])
             machineparts = msg.payload.split(' ')
-            machinenames[machine] = machineparts[0]
+            store_machinename(base_topic, machine, machineparts[0])
 
 
     # topic owntracks/user/device/proxy/jobs/job/<jobid>/<taskid>
@@ -520,7 +634,7 @@ def on_job(mosq, userdata, msg):
         if id_part == 'job':
             job = int(parts[len(parts) - 2])
             task = int(parts[len(parts) - 1])
-            tasknames[job*10000 + task] = msg.payload
+            store_taskname(base_topic, job, task, msg.payload)
 
 def on_activejob(mosq, msg, device):
     # ignore retained 'active' messages (assume we have already processed)
@@ -555,8 +669,9 @@ def on_activejob(mosq, msg, device):
         if 'jobstart' in jobs[device] and jobs[device]['jobstart'] != None:
             jobduration = now - jobs[device]['jobstart']
     else:
-        if job in jobnames:
-            jobname = jobnames[job]
+	jn = get_jobname(device, job)
+        if jn != None:
+            jobname = jn.name 
         else:
             jobname = msg.payload
 
@@ -572,7 +687,7 @@ def on_activejob(mosq, msg, device):
             if job == INACTIVE_JOB:
                 jobs[device].update(dict(jobend=now, jobduration=jobduration))
             else:
-                jobs[device].update(dict(job=job, jobname=jobname, jobstart=now, jobend=None, jobduration=None))
+                jobs[device].update(dict(job=job, task=0, place=0, machine=0, jobname=jobname, jobstart=now, jobend=None, jobduration=None))
             if 'jobstart' in jobs[device]:
                 push_job(mosq, device, jobs[device])
 
@@ -595,6 +710,9 @@ def on_activejob(mosq, msg, device):
                     'topic'   : device,
                     'tid'     : tid,
                     'job'     : job,
+                    'task'    : task,
+                    'place'   : place,
+                    'machine' : machine,
                     'jobname' : jobname,
                     'start'   : nowstr,
                 }
@@ -645,21 +763,25 @@ def on_currentjob(mosq, msg, device, timestamp):
         if 'jobstart' in jobs[device] and jobs[device]['jobstart'] != None:
             jobduration = now - jobs[device]['jobstart']
     else:
-        if job in jobnames:
-            jobname = jobnames[job]
-            if job*10000 + task in tasknames:
-                jobname = jobname + ' ' + tasknames[job* 10000 + task]
-                if place in placenames:
-                    jobname = jobname + ' ' + placenames[place]
-                    if machine in machinenames:
-                        jobname = jobname + ' ' + machinenames[machine]
+	jn = get_jobname(device, job)
+        if jn != None:
+            jobname = jn.name
+	    tn = get_taskname(device, job, task)
+            if tn != None:
+                jobname = jobname + ' ' + tn.name
+	        pn = get_placename(device, place)
+                if pn != None:
+                    jobname = jobname + ' ' + pn.name
+	            mn = get_machinename(device, machine)
+                    if mn != None:
+                        jobname = jobname + ' ' + mn.name
         else:
             jobname = msg.payload
 
     # update the job parameters in our map display
     if maptopic:
         if device in devices:
-            devices[device].update(dict(job=job, jobname=jobname))
+            devices[device].update(dict(job=job, task=task, place=place, machine=machine, jobname=jobname))
             push_map(mosq, device, devices[device])
 
     # update the job topic
@@ -692,6 +814,9 @@ def on_currentjob(mosq, msg, device, timestamp):
                     'topic'   : device,
                     'tid'     : tid,
                     'job'     : job,
+                    'task'    : task,
+                    'place'   : place,
+                    'machine' : machine,
                     'jobname' : jobname,
                     'start'   : nowstr,
                 }

@@ -27,7 +27,7 @@ from owntracks.ElementTree_pretty import prettify
 import time
 from owntracks import cf
 import paho.mqtt.client as paho
-from owntracks.dbschema import db, Geo, Location, Waypoint, User, Acl, Inventory, JOIN_LEFT_OUTER, fn, createalltables, dbconn, RAWdata, Job
+from owntracks.dbschema import db, Geo, Location, Waypoint, User, Acl, Inventory, JOIN_LEFT_OUTER, fn, createalltables, dbconn, RAWdata, Job, JobName, TaskName, PlaceName, MachineName
 from owntracks.auth import PistaAuth
 from owntracks import haversine
 import pytz
@@ -106,7 +106,7 @@ def utc_to_localtime(dt, tzname='UTC'):
     return new_s
 
 
-def getDBdata(usertid, from_date, to_date, spacing, tzname='UTC'):
+def getDBdata(usertid, from_date, to_date, tzname='UTC'):
 
     track = []
 
@@ -168,7 +168,7 @@ def getDBdata(usertid, from_date, to_date, spacing, tzname='UTC'):
     return track
 
 
-def getjobDBdata(usertid, from_date, to_date, tzname='UTC'):
+def getjobDBdata(usertid, userjid, userpid, usermid, from_date, to_date, tzname='UTC'):
 
     joblist = []
 
@@ -180,19 +180,28 @@ def getjobDBdata(usertid, from_date, to_date, tzname='UTC'):
     from_date = utc_time(from_date, tzname)
     to_date = utc_time(to_date, tzname)
 
-    log.debug("getjobDBdata: FROM={0}, TO={1}".format(from_date, to_date))
+    log.debug("getjobDBdata: FROM={0}, TO={1} {2} {3} {4} {5}".format(from_date, to_date, usertid, userjid, userpid, usermid))
 
     dbconn()
     query = (Job
                 .select(Job)
                 .where(
-                    (Job.tid == usertid) &
                     (Job.start < to_date) &
                     (Job.end > from_date)
                 )
             )
 
+    if (usertid != None):
+        query = query.where(Job.tid == usertid)
+    if (userjid != None):
+        query = query.where(Job.job == userjid)
+    if (userpid != None):
+        query = query.where(Job.place == userpid)
+    if (usermid != None):
+        query = query.where(Job.machine == usermid)
+
     query = query.order_by(Job.id.asc())
+
     for j in query.naive():
 
         try:
@@ -201,6 +210,9 @@ def getjobDBdata(usertid, from_date, to_date, tzname='UTC'):
                 'topic'     : j.topic,
                 'tid'       : j.tid,
                 'job'       : j.job,
+                'task'      : j.task,
+                'place'     : j.place,
+                'machine'   : j.machine,
                 'jobname'   : j.jobname,
                 'duration'  : j.duration,
             }
@@ -465,6 +477,18 @@ def page_activo():
 
     return template('activo', pistapages=cf.g('pista', 'pages'), have_xls=HAVE_XLS, isdemo=isdemo)
 
+@app.route('/operations')
+@auth_basic(check_auth)
+def page_operations():
+
+    isdemo = isdemo=cf.g('pista', 'is_demo')
+    if isdemo == True:
+        isdemo = 1
+    else:
+        isdemo = 0
+
+    return template('operations', pistapages=cf.g('pista', 'pages'), have_xls=HAVE_XLS, isdemo=isdemo)
+
 @app.route('/hello')
 def hello():
     data = {
@@ -530,6 +554,66 @@ def users():
 
     log.debug("/api/userlist returns: {0}".format(json.dumps(allowed_tids)))
     return dict(userlist=allowed_tids)
+
+@app.route('/api/joblist')
+@auth_basic(check_auth)
+def jobs():
+    current_user = request.auth[0]
+
+    dbconn()
+
+    joblist = []
+    query = (JobName.select(JobName.jid, JobName.name)
+                    .order_by(JobName.jid)
+                    )
+    for q in query:
+        joblist.append({
+            'id' : q.jid,
+            'name' : q.name,
+    })
+
+    log.debug("/api/placelist returns: {0}".format(json.dumps(joblist)))
+    return dict(joblist=joblist)
+
+@app.route('/api/placelist')
+@auth_basic(check_auth)
+def places():
+    current_user = request.auth[0]
+
+    dbconn()
+
+    placelist = []
+    query = (PlaceName.select(PlaceName.pid, PlaceName.name)
+                    .order_by(PlaceName.pid)
+                    )
+    for q in query:
+        placelist.append({
+            'id' : q.pid,
+            'name' : q.name,
+    })
+
+    log.debug("/api/placelist returns: {0}".format(json.dumps(placelist)))
+    return dict(placelist=placelist)
+
+@app.route('/api/machinelist')
+@auth_basic(check_auth)
+def machines():
+    current_user = request.auth[0]
+
+    dbconn()
+
+    machinelist = []
+    query = (MachineName.select(MachineName.mid, MachineName.name)
+                    .order_by(MachineName.mid)
+                    )
+    for q in query:
+        machinelist.append({
+            'id' : q.mid,
+            'name' : q.name,
+    })
+
+    log.debug("/api/machinelist returns: {0}".format(json.dumps(machinelist)))
+    return dict(machinelist=machinelist)
 
 @app.route('/api/inventorytopics')
 @auth_basic(check_auth)
@@ -603,7 +687,7 @@ def get_download():
 
     trackname = 'owntracks-%s-%s-%s' % (usertid, from_date, to_date)
 
-    track = getDBdata(usertid, from_date, to_date, None, tzname)
+    track = getDBdata(usertid, from_date, to_date, tzname)
 
     kilometers = track_length(track)
 
@@ -825,6 +909,9 @@ def get_downloadjob():
     current_user = request.auth[0]
 
     usertid = request.params.get('usertid')
+    userjid = request.params.get('userjid')
+    userpid = request.params.get('userpid')
+    usermid = request.params.get('usermid')
     from_date = request.params.get('fromdate')
     to_date = request.params.get('todate')
     fmt = request.params.get('format')
@@ -844,7 +931,7 @@ def get_downloadjob():
 
     joblistname = 'owntracksActivo-%s-%s-%s' % (usertid, from_date, to_date)
 
-    joblist =  getjobDBdata(usertid, from_date, to_date, tzname)
+    joblist =  getjobDBdata(usertid, userjid, userpid, usermid, from_date, to_date, tzname)
 
     sio = StringIO()
     s = codecs.getwriter('utf8')(sio)
@@ -969,13 +1056,37 @@ def get_joblist():
     # needs LOTS of error handling
 
     usertid = data.get('usertid')
+    userjid = data.get('userjid')
+    userpid = data.get('userpid')
+    usermid = data.get('usermid')
     from_date = data.get('fromdate')
     to_date = data.get('todate')
     tzname = request.params.get('tzname', 'UTC')
 
-    joblist = getjobDBdata(usertid, from_date, to_date, tzname)
+    joblist = getjobDBdata(usertid, userjid, userpid, usermid, from_date, to_date, tzname)
 
     return json.dumps(joblist)
+
+@app.route('/api/getOperations', method='POST')
+@auth_basic(check_auth)
+def get_operations():
+    data = json.load(bottle.request.body)
+
+    # needs LOTS of error handling
+
+    usertid = data.get('usertid')
+    from_date = data.get('fromdate')
+    to_date = data.get('todate')
+    tzname = data.get('tzname', 'UTC')
+
+    track = getDBdata(usertid, from_date, to_date, tzname)
+
+    for point in track:
+        # tst = point.get('tst')
+        # print point.get('tst'), tst, utc_to_localtime(point.get('tst'), tzname)
+        point['tst'] = utc_to_localtime(point.get('tst'), tzname)
+
+    return json.dumps(track)
 
 @app.route('/api/getGeoJSON', method='POST')
 @auth_basic(check_auth)
@@ -990,7 +1101,7 @@ def get_geoJSON():
     spacing = int(data.get('spacing', POINT_KM))
     tzname = data.get('tzname', 'UTC')
 
-    track = getDBdata(usertid, from_date, to_date, spacing, tzname)
+    track = getDBdata(usertid, from_date, to_date, tzname)
 
     last_point = [None, None]
 

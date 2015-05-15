@@ -42,6 +42,7 @@ Upon launching one of the utilities, the database schema is created:
 * `user` authenticates users in [mosquitto-auth-plug] and in _pista_.
 * `waypoint` waypoints table. This is also the basis for drawing geo fences on the map.
 * `lastloc` contains the last location of each device; basically `location` but only the last.
+* `job` contains the start and end times of jobs performed.
 
 ### `o2s`
 
