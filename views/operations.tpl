@@ -34,12 +34,24 @@
 	<div id='content'>
 		Summary
 		<div id="summary"></div>
-		<hr>
+		<hr/>
 		Calendar
 		<div id="calendar"></div>
-		<hr>
+		<hr/>
 		Details
 		<div id="details"></div>
+		<hr/>
+		* t is the trigger of the published message:
+		<ul>
+			<li>f first publish after reboot</li>
+			<li>m for manually requested locations (e.g. by publishing to /cmd)</li>
+			<li>t (time) for location published because device is moving.</li>
+			<li>T (time) for location published because of time passed (maxInterval); device is stationary</li>
+			<li>k When transitioning from move to stationary an additional publish is sent marked with trigger k (park)</li>
+			<li>v When transitioning from stationary to move additional publish is sent marked with trigger v (mo-v-e)</li>
+			<li>l When device looses GPS fix, an additional publish is sent to transmit the last known position</li>
+			<li>L last position before gracefull shutdown</li>
+		</ul>
 
 		<script type="text/javascript">
 
@@ -141,6 +153,8 @@
 						newStatus = 'on';
 					} else if (point.t == 't') {
 						newStatus = 'driving';
+					} else if (point.t == 'm') {
+						newStatus = 'on';
 					} else if (point.t == 'T') {
 						newStatus = 'on';
 					} else if (point.t == 'k') {
@@ -168,7 +182,7 @@
 						summary.status = status;
 						summary.duration = 0.0;
 					}
-					var epoch = moment(point.tst).unix();
+					var epoch = moment.utc(point.tst).unix();
 					//console.log("summary " + summary.status + " " + summary.duration + " " + epoch + " " + start);
 					summary.duration = summary.duration + epoch - start;
 					summaryData[index] = summary;
@@ -193,12 +207,32 @@
 						rowHeaders: false,
 						colHeaders: ['Status', 'Total (s)'],
 						columns: [
-							{ data: 'status', readOnly: true },
-							{ data: 'duration', readOnly: true },
-						]
+							{ data: 'status', readOnly: true, className: "htLeft" },
+							{ data: 'duration', readOnly: true, className: "htRight" },
+						],
+						cells: function (row, col, prop) {
+							var cellProperties = {};
+							if (col == 0) {
+								cellProperties.renderer = renderer;
+							}
+							return cellProperties;
+						}
 					},
 					summaryHot;
-		  
+		 
+				function renderer(instance, td, row, col, prop, value, cellProperties) {
+					Handsontable.renderers.TextRenderer.apply(this, arguments);
+					if (value === 'driving') {
+						td.style.background = '#C0ffC0';
+					} else if (value === 'on') {
+						td.style.background = '#C0C0ff';
+					} else if (value === 'off') {
+						 td.style.background = '#ffC0C0';
+					} else {
+						 td.style.background = '#ffffff';
+					}	
+				}
+
 				summaryHot = new Handsontable(summaryContainer, summarySettings);
 				summaryHot.render();
 			}
@@ -215,7 +249,9 @@
 				}
 
 				dayoffset = 0;
-				for (date = fromdate; date <= todate; date.setDate(date.getDate() + 1)) {
+				current = moment(fromdate);	
+				to = moment(todate);
+				while (current.isBefore(to) || current.isSame(to)) {
 					key = "T" + dayoffset;
 					columns[columns.length] = { data: key, readOnly: true };
 					for (i = 0; i < 24 ; i++) {
@@ -227,14 +263,14 @@
 						row[key] = "";
 						calendarData[i] = row;
 					}
-					var dateString = date.toLocaleDateString();
-					columnHeaders[columnHeaders.length] = dateString;
+					columnHeaders[columnHeaders.length] = current.format('YYYY-MM-DD');
 					dayoffset++;
+					current.add(1, 'd');
 				}
 
 				for (pointno in data) {
 					point = data[pointno];
-					epoch = moment(point.tst).unix();
+					epoch = moment.utc(point.tst).unix();
 					offset = epoch - start;
 					dayoffset = Math.floor(offset / (24 * 60 * 60));
 					houroffset = Math.floor((offset % (24 * 60 * 60)) / (60 * 60));
@@ -251,10 +287,32 @@
 						data: calendarData,
 						colHeaders: columnHeaders,
 					        rowHeaders: rowHeaders,
-						columns: columns
+						columns: columns,
+						colWidths : 80,
+						cells: function (row, col, prop) {
+							var cellProperties = {};
+							cellProperties.renderer = renderer;
+							return cellProperties;
+						}
 					},
 					calendarHot;
   
+				function renderer(instance, td, row, col, prop, value, cellProperties) {
+					Handsontable.renderers.TextRenderer.apply(this, arguments);
+					td.style.background = '#ffC0C0';
+					if (value.indexOf('m') != -1 ||
+						value.indexOf('f') != -1 ||
+						value.indexOf('k') != -1 ||
+						value.indexOf('T') != -1 ||
+						value.indexOf('l') != -1) {
+						 td.style.background = '#C0C0ff';
+					}
+					if (value.indexOf('v') != -1 ||
+						value.indexOf('t') != -1) {
+						 td.style.background = '#c0ffc0';
+					}	
+				}
+
 				calendarHot = new Handsontable(calendarContainer, calendarSettings);
 				calendarHot.render();
 			}
@@ -287,18 +345,47 @@
 							settings = {
 								data: data,
 								rowHeaders: true,
-								colHeaders: ['Timestamp', 'T', 'Velocity', 'Distance', 'Trip'],
+								colHeaders: [
+									'Timestamp (local)',
+									't*',
+									'Velocity (km/h)',
+									'Distance (m)',
+									'Trip (m)'
+								],
 								columns: [
-									{ data: 'tst', readOnly: true },
-									{ data: 't', readOnly: true },
-									{ data: 'vel', readOnly: true },
-									{ data: 'dist', readOnly: true },
-									{ data: 'trip', readOnly: true },
-								]
+									{ data: 'tst', readOnly: true, className: "htLeft"},
+									{ data: 't', readOnly: true, className: "htCenter"},
+									{ data: 'vel', readOnly: true, className: "htRight"},
+									{ data: 'dist', readOnly: true, className: "htRight"},
+									{ data: 'trip', readOnly: true, className: "htRight"},
+								],
+								cells: function (row, col, prop) {
+									var cellProperties = {};
+									if (col == 1) {
+										cellProperties.renderer = renderer;
+									}
+									return cellProperties;
+								}
 							},
 							hot;
 		  
-						hot = new Handsontable(container, settings);
+						function renderer(instance, td, row, col, prop, value, cellProperties) {
+							Handsontable.renderers.TextRenderer.apply(this, arguments);
+							if (value === 'v' || value === 't') {
+								 td.style.background = '#C0ffC0';
+							} else if (value === 'm' || value === 'f' || value === 'k' || value === 'T' || value === 'l') {
+								 td.style.background = '#C0C0ff';
+							} else if (value === 'L') {
+								 td.style.background = '#ffC0C0';
+							} else {
+								 td.style.background = '#ffffff';
+							}	
+						}
+
+						hot = new Handsontable (
+							container,
+							settings
+						);
 						hot.render();
 
 						summary(new Date($('#fromdate').val()), new Date($('#todate').val()), data); 
