@@ -23,6 +23,7 @@
 			click below to show in spreadsheet.
 			</p>
 			Tracker ID: <select id='usertid'></select><br/>
+			<br/>
 		</div>
 
 		<div id='datepick'></div>
@@ -34,24 +35,38 @@
 	<div id='content'>
 		Summary
 		<div id="summary"></div>
+
 		<hr/>
-		Calendar
+		Calendar - Time Interval:
+			 <select id='timeinterval'>
+				<option value="60">1 hour</option>
+				<option value="15">15 minutes</option>
+				<option value="10">10 minutes</option>
+				<option value="180">3 hours</option>
+			</select><br/>
+		- Start Time:
+			 <select id='timestart'>
+				<option value="360">06:00</option>
+				<option value="480">08:00</option>
+				<option value="0">00:00</option>
+			</select><br/>
+		- End Time:
+			 <select id='timeend'>
+				<option value="1200">20:00</option>
+				<option value="1020">17:00</option>
+				<option value="1440">24:00</option>
+			</select><br/>
 		<div id="calendar"></div>
+
 		<hr/>
-		Details
-		<div id="details"></div>
-		<hr/>
-		* t is the trigger of the published message:
-		<ul>
-			<li>f first publish after reboot</li>
-			<li>m for manually requested locations (e.g. by publishing to /cmd)</li>
-			<li>t (time) for location published because device is moving.</li>
-			<li>T (time) for location published because of time passed (maxInterval); device is stationary</li>
-			<li>k When transitioning from move to stationary an additional publish is sent marked with trigger k (park)</li>
-			<li>v When transitioning from stationary to move additional publish is sent marked with trigger v (mo-v-e)</li>
-			<li>l When device looses GPS fix, an additional publish is sent to transmit the last known position</li>
-			<li>L last position before gracefull shutdown</li>
-		</ul>
+		List - Minimum Distance:
+			 <select id='minimumdistance'>
+				<option value="100">100 m</option>
+				<option value="0">0 m</option>
+				<option value="1000">1 km</option>
+				<option value="10000">10 km</option>
+			</select><br/>
+		<div id="list"></div>
 
 		<script type="text/javascript">
 
@@ -83,7 +98,7 @@
 				todayHighlight: true,
 			}).on('changeDate', function(e){
 				//console.log( "UTC=" + JSON.stringify($('#datepick').datepicker('getUTCDates' ))  );
-				d = $('#datepick').datepicker('getUTCDates' );
+				var d = $('#datepick').datepicker('getUTCDates' );
 
 				var d1;
 				var d2;
@@ -116,25 +131,26 @@
 				return s
 			}
 
-			function duration(ticks) {
+			function duration(seconds) {
+				var ticks = seconds;
 				var durationString = "";
 				if (ticks >= 24 * 60 * 60) {
-					days = Math.floor(ticks / (24 * 60 * 60));	
+					var days = Math.floor(ticks / (24 * 60 * 60));	
 					durationString = days + "d ";	
 					ticks -= days * 24 * 60 * 60;	
 				}
 				if (ticks >= 60 * 60) {
-					hours = Math.floor(ticks / (60 * 60));	
+					var hours = Math.floor(ticks / (60 * 60));	
 					durationString = durationString + hours + "h ";	
 					ticks -= hours * 60 * 60;	
 				}
 				if (ticks >= 60) {
-					minutes = Math.floor(ticks / 60);	
+					var minutes = Math.floor(ticks / 60);	
 					durationString = durationString + minutes + "m ";	
 					ticks -= minutes * 60;	
 				}
 				if (ticks >= 1) {
-					seconds = Math.floor(ticks);	
+					var seconds = Math.floor(ticks);	
 					durationString = durationString + seconds + "s ";	
 				} else {
 					durationString = durationString + "0s";
@@ -193,22 +209,29 @@
 				for (pointno in data) {
 					process(data[pointno]);
 				}
-				endOfDay = todate;
+
+				var endOfDay = todate;
 				endOfDay.setHours(23, 59, 59, 999);
 				process({t:"L", tst:endOfDay});
 
 				for (index = 0; index < summaryData.length; index++) {
-					summaryData[index].duration = duration(summaryData[index].duration);
+					var seconds = parseInt(summaryData[index].duration);
+					summaryData[index].duration = duration(seconds);
+
+					var secondsduration = moment.duration(seconds, 'seconds');
+					//console.log('seconds ' + seconds + ' ' + secondsduration);
+					summaryData[index].human = secondsduration.humanize();
 				}
 
 				var	summaryContainer = document.getElementById('summary'),
 					summarySettings = {
 						data: summaryData,
 						rowHeaders: false,
-						colHeaders: ['Status', 'Total (s)'],
+						colHeaders: ['Status', 'Total (s)', 'Duration'],
 						columns: [
 							{ data: 'status', readOnly: true, className: "htLeft" },
 							{ data: 'duration', readOnly: true, className: "htRight" },
+							{ data: 'human', readOnly: true, className: "htLeft" },
 						],
 						cells: function (row, col, prop) {
 							var cellProperties = {};
@@ -237,31 +260,41 @@
 				summaryHot.render();
 			}
 
-			function calendar(fromdate, todate, data) {
+			function calendar(fromdate, todate, interval, timestart, timeend, data) {
 				var start = moment(fromdate).unix();
 				var columns = [];
 				var columnHeaders = [];
 				var rowHeaders = [];
 				var calendarData = [];
 
-				for (i = 0; i < 24 ; i++) {
-					rowHeaders[rowHeaders.length] = i;
+				//console.log(interval)
+				var durationinterval = moment.duration(interval, 'm');
+				//console.log(durationinterval.humanize())
+				var starttime = moment.utc(0);
+				//console.log(starttime.format())
+				var time = starttime;
+
+				for (var i = 0; i < 24 * 60; i += interval) {
+					//console.log(time.format('HH:mm'));
+					rowHeaders[rowHeaders.length] = time.format('HH:mm');
+					time.add(durationinterval);
 				}
 
-				dayoffset = 0;
-				current = moment(fromdate);	
-				to = moment(todate);
+				var dayoffset = 0;
+				var current = moment(fromdate);	
+				var to = moment(todate);
 				while (current.isBefore(to) || current.isSame(to)) {
-					key = "T" + dayoffset;
-					columns[columns.length] = { data: key, readOnly: true };
-					for (i = 0; i < 24 ; i++) {
-						if (calendarData.length > i) {
-							row = calendarData[i];
+					var key = "T" + dayoffset;
+					columns[columns.length] = { data: key, readOnly: true , className: "htCenter"};
+					for (var i = 0; i < 24 * 60; i += interval) {
+						if (calendarData.length > i/interval) {
+							row = calendarData[i/interval];
 						} else {
 							row = {};
 						}
 						row[key] = "";
-						calendarData[i] = row;
+						//console.log( key + ' ' + i/interval);
+						calendarData[i/interval] = row;
 					}
 					columnHeaders[columnHeaders.length] = current.format('YYYY-MM-DD');
 					dayoffset++;
@@ -269,61 +302,143 @@
 				}
 
 				for (pointno in data) {
-					point = data[pointno];
-					epoch = moment.utc(point.tst).unix();
-					offset = epoch - start;
-					dayoffset = Math.floor(offset / (24 * 60 * 60));
-					houroffset = Math.floor((offset % (24 * 60 * 60)) / (60 * 60));
+					var point = data[pointno];
+					var epoch = moment.utc(point.tst).unix();
+					var offset = epoch - start;
+					var dayoffset = Math.floor(offset / (24 * 60 * 60));
+					var houroffset = Math.floor((offset % (24 * 60 * 60)) / (interval * 60));
+					//console.log(moment.utc(point.tst).format() + ' ' + offset + ' ' + dayoffset + ' ' + houroffset);
 					if (dayoffset >= 0 && houroffset >= 0) {
-						row = calendarData[houroffset];
-						key = "T" + dayoffset;
-						row[key] = row[key] + point.t;
-						calendarData[houroffset] = row;
+						var row = calendarData[houroffset];
+						if (row != null) {
+							var key = "T" + dayoffset;
+							//console.log('row[key]==', row[key]);
+							row[key] = row[key] + point.t;
+							calendarData[houroffset] = row;
+						}
 					}
 				}
 
-				var	calendarContainer = document.getElementById('calendar'),
-					calendarSettings = {
-						data: calendarData,
+				console.log('timestart==' + timestart + ' timeend==' + timeend + ' interval==' + interval);
+				var	container = document.getElementById('calendar'),
+					settings = {
+						data: calendarData.slice(timestart / interval, timeend / interval),
 						colHeaders: columnHeaders,
-					        rowHeaders: rowHeaders,
+					        rowHeaders: rowHeaders.slice(timestart / interval, timeend / interval),
 						columns: columns,
-						colWidths : 80,
 						cells: function (row, col, prop) {
 							var cellProperties = {};
 							cellProperties.renderer = renderer;
 							return cellProperties;
 						}
 					},
-					calendarHot;
+					hot;
   
 				function renderer(instance, td, row, col, prop, value, cellProperties) {
 					Handsontable.renderers.TextRenderer.apply(this, arguments);
 					td.style.background = '#ffC0C0';
-					if (value.indexOf('m') != -1 ||
-						value.indexOf('f') != -1 ||
-						value.indexOf('k') != -1 ||
-						value.indexOf('T') != -1 ||
-						value.indexOf('l') != -1) {
-						 td.style.background = '#C0C0ff';
+					if (value != null) {
+						if (value.indexOf('m') != -1 ||
+							value.indexOf('f') != -1 ||
+							value.indexOf('k') != -1 ||
+							value.indexOf('T') != -1 ||
+							value.indexOf('l') != -1) {
+							 td.style.background = '#C0C0ff';
+						}
+						if (value.indexOf('v') != -1 ||
+							value.indexOf('t') != -1) {
+							 td.style.background = '#c0ffc0';
+						}	
+						var hidden = '';
+						if (value.length > 0) {
+							hidden = '<span title="' + value + '">(Info)</span>';
+						}
+						td.innerHTML = hidden;
 					}
-					if (value.indexOf('v') != -1 ||
-						value.indexOf('t') != -1) {
-						 td.style.background = '#c0ffc0';
-					}	
 				}
 
-				calendarHot = new Handsontable(calendarContainer, calendarSettings);
-				calendarHot.render();
+				hot = new Handsontable(container, settings);
+				hot.render();
+			}
+
+			function list(fromdate, todate, minimum, data) {
+				var listData = [];
+				var startpoint = null;
+				var endpoint = null;
+
+				for (pointno in data) {
+					var point = data[pointno];
+					if (startpoint == null) {
+						if (point.t == 't' || point.t == 'v' || point.t == 'f') {
+							startpoint = point;
+						}
+					} else {
+						if (point.t == 'L' || point.t == 'T') {
+							var diff = 0;
+							if (endpoint != null) {
+								if (endpoint.trip != startpoint.trip) {
+									diff = startpoint.trip - endpoint.trip;
+								}
+							}
+							endpoint = point;
+							var distance = endpoint.trip - startpoint.trip;
+							console.log('distance==' + distance + ' minimum==' + minimum);
+							if (distance > minimum) {
+								var trip = {
+									start: startpoint.tst,
+									end: endpoint.tst,
+									from: startpoint.addr,
+									to: endpoint.addr,
+									odometer: startpoint.trip / 1000,
+									diff: diff,
+									distance: distance / 1000,
+									comment: "..."
+								};
+								listData[listData.length] = trip;
+							}
+							startpoint = null;
+						}
+					}
+				}
+
+				var	container = document.getElementById('list'),
+					settings = {
+						data: listData,
+						colHeaders: [
+							'Start',
+							'End',
+							'From',
+							'To',
+							'Odometer (km)',
+							'Difference (m)',
+							'Distance (km)',
+							'Comment'
+						],
+					        rowHeaders: true,
+						columns: [
+							{ data: 'start', readOnly: true , className: "htLeft"},
+							{ data: 'end', readOnly: true , className: "htLeft"},
+							{ data: 'from', readOnly: true , className: "htLeft"},
+							{ data: 'to', readOnly: true , className: "htLeft"},
+							{ data: 'odometer', readOnly: true , className: "htRight"},
+							{ data: 'diff', readOnly: true , className: "htRight"},
+							{ data: 'distance', readOnly: true , className: "htRight"},
+							{ data: 'comment', readOnly: false , className: "htLeft", width: 200},
+						],
+					},
+					hot;
+
+				hot = new Handsontable(container, settings);
+				hot.render();
 			}
 
 			function getSheet() {
-				var $details = $('#details');
 				var $summary = $('#summary');
 				var $calendar = $('#calendar');
-				$details.html('');
+				var $list = $('#list');
 				$summary.html('');
 				$calendar.html('');
+				$list.html('');
 
 				var params = {
 					usertid: $('#usertid').children(':selected').attr('id'),
@@ -331,6 +446,11 @@
 					todate: $('#todate').val(),
 					tzname: tzname,
 				};
+
+				var interval = $('#timeinterval').children(':selected').attr('value');
+				var timestart = $('#timestart').children(':selected').attr('value');
+				var timeend = $('#timeend').children(':selected').attr('value');
+				var minimum = $('#minimumdistance').children(':selected').attr('value');
 
 				$.ajax({
 					type: 'POST',
@@ -340,57 +460,9 @@
 					dataType: 'json',
 					success: function(data) {
 						//console.log(JSON.stringify(data));
-
-						var	container = document.getElementById('details'),
-							settings = {
-								data: data,
-								rowHeaders: true,
-								colHeaders: [
-									'Timestamp (local)',
-									't*',
-									'Velocity (km/h)',
-									'Distance (m)',
-									'Trip (m)'
-								],
-								columns: [
-									{ data: 'tst', readOnly: true, className: "htLeft"},
-									{ data: 't', readOnly: true, className: "htCenter"},
-									{ data: 'vel', readOnly: true, className: "htRight"},
-									{ data: 'dist', readOnly: true, className: "htRight"},
-									{ data: 'trip', readOnly: true, className: "htRight"},
-								],
-								cells: function (row, col, prop) {
-									var cellProperties = {};
-									if (col == 1) {
-										cellProperties.renderer = renderer;
-									}
-									return cellProperties;
-								}
-							},
-							hot;
-		  
-						function renderer(instance, td, row, col, prop, value, cellProperties) {
-							Handsontable.renderers.TextRenderer.apply(this, arguments);
-							if (value === 'v' || value === 't') {
-								 td.style.background = '#C0ffC0';
-							} else if (value === 'm' || value === 'f' || value === 'k' || value === 'T' || value === 'l') {
-								 td.style.background = '#C0C0ff';
-							} else if (value === 'L') {
-								 td.style.background = '#ffC0C0';
-							} else {
-								 td.style.background = '#ffffff';
-							}	
-						}
-
-						hot = new Handsontable (
-							container,
-							settings
-						);
-						hot.render();
-
 						summary(new Date($('#fromdate').val()), new Date($('#todate').val()), data); 
-						calendar(new Date($('#fromdate').val()), new Date($('#todate').val()), data); 
-
+						calendar(new Date($('#fromdate').val()), new Date($('#todate').val()), parseInt(interval), parseInt(timestart), parseInt(timeend), data); 
+						list(new Date($('#fromdate').val()), new Date($('#todate').val()), parseInt(minimum), data); 
 					},
 					error: function(xhr, status, error) {
 						alert('get: ' + status + ", " + error);
