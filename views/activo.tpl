@@ -4,6 +4,7 @@
 
 <link href="activo/activo-style.css" rel="stylesheet">
 <script src="activo/jstz.min.js" type="text/javascript"></script>
+<script src="js/moment.min.js" type="text/javascript"></script>
 <script src="config.js" type="text/javascript"></script>
 <link rel="stylesheet" media="screen" href="handsontable/handsontable.full.css">
 <script src="handsontable/handsontable.full.js"></script>
@@ -47,12 +48,32 @@
 	<div id='content'>
 		Summary
 		<div id="summary"></div>
+
 		<hr>
 		Details
 		<div id="details"></div>
+
 		<hr>
-		Calendar
-		<div id="calendar"></div>
+                Calendar - Time Interval:
+                         <select id='timeinterval'>
+                                <option value="60">1 hour</option>
+                                <option value="15">15 minutes</option>
+                                <option value="10">10 minutes</option>
+                                <option value="180">3 hours</option>
+                        </select><br/>
+                - Start Time:
+                         <select id='timestart'>
+                                <option value="360">06:00</option>
+                                <option value="480">08:00</option>
+                                <option value="0">00:00</option>
+                        </select><br/>
+                - End Time:
+                         <select id='timeend'>
+                                <option value="1200">20:00</option>
+                                <option value="1020">17:00</option>
+                                <option value="1440">24:00</option>
+                        </select><br/>
+                <div id="calendar"></div>
 
 		<script type="text/javascript">
 
@@ -66,7 +87,6 @@
 				async: true,
 				success: function(data) {
 					$selecttid.html('');
-					$selecttid.append('<option id=0>any</option>');
 					$.each(data.userlist, function(key, val) {
 						$selecttid.append('<option id="' + val.id + '">' + val.name + '</option>');
 					})
@@ -169,42 +189,171 @@
 				return s
 			}
 
-			function calendar(fromdate, todate) {
-				var columns = [
-					{ data: 'time', readOnly: true },
-				];
-				var columnHeaders = [
-					'Time'
-				];
-				var calendarData = [];
-				for (i = 0; i < 24 * 3600; i += 30 * 60) {
-					var timeString = new Date(i * 1000).toLocaleTimeString();
-					calendarData[calendarData.length] = { time: timeString };
-				}
+                        function calendar(fromdate, todate, interval, timestart, timeend, data) {
+                                var start = moment(fromdate).unix();
+                                var columns = [];
+                                var columnHeaders = [];
+                                var rowHeaders = [];
+                                var calendarData = [];
 
-				for (date = fromdate; date <= todate; date.setDate(date.getDate() + 1)) {
-					console.log(date);
-					var dateString = date.toLocaleDateString();
-					columns[columns.length] = { data: dateString, readOnly: true };
-					columnHeaders[columnHeaders.length] = dateString;
-				}
+                                var durationinterval = moment.duration(interval, 'm');
+                                var starttime = moment.utc(0);
+                                var time = starttime;
 
+                                for (var i = 0; i < 24 * 60; i += interval) {
+                                        rowHeaders[rowHeaders.length] = time.format('HH:mm');
+                                        time.add(durationinterval);
+                                }
+
+                                var dayoffset = 0;
+                                var current = moment(fromdate);
+                                var to = moment(todate);
+                                while (current.isBefore(to) || current.isSame(to)) {
+                                        var key = "T" + dayoffset;
+                                        columns[columns.length] = { data: key, readOnly: true , className: "htCenter"};
+                                        for (var i = 0; i < 24 * 60; i += interval) {
+                                                if (calendarData.length > i/interval) {
+                                                        row = calendarData[i/interval];
+                                                } else {
+                                                        row = {};
+                                                }
+                                                row[key] = "";
+                                                calendarData[i/interval] = row;
+                                        }
+                                        columnHeaders[columnHeaders.length] = current.format('YYYY-MM-DD');
+                                        dayoffset++;
+                                        current.add(1, 'd');
+                                }
+
+                                for (jobno in data) {
+                                        var job = data[jobno];
+                                        var epoch = moment.utc(job.start).unix();
+                                        var offset = epoch - start;
+                                        var dayoffset = Math.floor(offset / (24 * 60 * 60));
+                                        var houroffset = Math.floor((offset % (24 * 60 * 60)) / (interval * 60));
+                                        if (dayoffset >= 0 && houroffset >= 0) {
+                                                var row = calendarData[houroffset];
+                                                if (row != null) {
+                                                        var key = "T" + dayoffset;
+							if (row[key].length > 0) {
+                                                        row[key] = row[key] + '\n';
+							}
+                                                        row[key] = row[key] + job.jobname;
+                                                        calendarData[houroffset] = row;
+                                                }
+                                        }
+                                }
+
+                                var     container = document.getElementById('calendar'),
+                                        settings = {
+                                                data: calendarData.slice(timestart / interval, timeend / interval),
+                                                colHeaders: columnHeaders,
+                                                rowHeaders: rowHeaders.slice(timestart / interval, timeend / interval),
+                                                columns: columns,
+                                                cells: function (row, col, prop) {
+                                                        var cellProperties = {};
+                                                        cellProperties.renderer = renderer;
+                                                        return cellProperties;
+                                                }
+                                        },
+                                        hot;
+
+                                function renderer(instance, td, row, col, prop, value, cellProperties) {
+                                        Handsontable.renderers.TextRenderer.apply(this, arguments);
+                                        td.style.background = '#ffC0C0';
+                                        if (value != null) {
+                                                if (value.indexOf('m') != -1 ||
+                                                        value.indexOf('f') != -1 ||
+                                                        value.indexOf('k') != -1 ||
+                                                        value.indexOf('T') != -1 ||
+                                                        value.indexOf('l') != -1) {
+                                                         td.style.background = '#C0C0ff';
+                                                }
+                                                if (value.indexOf('v') != -1 ||
+                                                        value.indexOf('t') != -1) {
+                                                         td.style.background = '#c0ffc0';
+                                                }
+                                                var hidden = '';
+                                                if (value.length > 0) {
+                                                        hidden = '<span title="' + value + '">(Info)</span>';
+                                                }
+                                                td.innerHTML = hidden;
+                                        }
+                                }
+
+                                hot = new Handsontable(container, settings);
+                                hot.render();
+                        }
+
+			function duration(seconds) {
+                                var ticks = seconds;
+                                var durationString = "";
+                                if (ticks >= 24 * 60 * 60) {
+                                        var days = Math.floor(ticks / (24 * 60 * 60));
+                                        durationString = days + "d ";
+                                        ticks -= days * 24 * 60 * 60;
+                                }
+                                if (ticks >= 60 * 60) {
+                                        var hours = Math.floor(ticks / (60 * 60));
+                                        durationString = durationString + hours + "h ";
+                                        ticks -= hours * 60 * 60;
+                                }
+                                if (ticks >= 60) {
+                                        var minutes = Math.floor(ticks / 60);
+                                        durationString = durationString + minutes + "m ";
+                                        ticks -= minutes * 60;
+                                }
+                                if (ticks >= 1) {
+                                        var seconds = Math.floor(ticks);
+                                        durationString = durationString + seconds + "s ";
+                                } else {
+                                        durationString = durationString + "0s";
+                                }
+                                return durationString;
+                        }
+
+			function summary(data) {
+				var summaryData = [];
 				for (jobno in data) {
 					var job = data[jobno];
-					console.log(job);
+					var summary = null;
+					var index = 0;
+					for (index = 0; index < summaryData.length; index++) {
+						if (summaryData[index].jobname == job.jobname) {
+							summary = summaryData[index];
+							break;
+						}
+					}
+					if (summary == null) {
+						summary = {}; 
+						summary.jobname = job.jobname;
+						summary.total = 0;
+					}
+					summary.total = summary.total + job.duration;
+					summaryData[index] = summary;
 				}
 
-				var	calendarContainer = document.getElementById('calendar'),
-					calendarSettings = {
-						data: calendarData,
+				for (index = 0; index < summaryData.length; index++) {
+					var seconds = parseInt(summaryData[index].total);
+					summaryData[index].total = duration(seconds);
+					var secondsduration = moment.duration(seconds, 'seconds');
+					summaryData[index].human = secondsduration.humanize();
+				}
+
+				var	container = document.getElementById('summary'),
+					settings = {
+						data: summaryData,
 						rowHeaders: true,
-						colHeaders: columnHeaders,
-						columns: columns
+						colHeaders: ['Job', 'Total', 'Duration'],
+						columns: [
+							{ data: 'jobname', readOnly: true, className: "htCenter" },
+							{ data: 'total', readOnly: true, className: "htRight" },
+							{ data: 'human', readOnly: true, className: "htLeft" },
+						]
 					},
-					calendarHot;
-  
-				calendarHot = new Handsontable(calendarContainer, calendarSettings);
-				calendarHot.render();
+					hot;
+				hot = new Handsontable(container, settings);
+				hot.render();
 			}
 
 			function getSheet() {
@@ -245,71 +394,61 @@
 					data: JSON.stringify(params),
 					dataType: 'json',
 					success: function(data) {
-						// console.log(JSON.stringify(data));
-
+						for (index = 0; index < data.length; index++) {
+							var seconds = parseInt(data[index].duration);
+							data[index].time = duration(seconds);
+							var secondsduration = moment.duration(seconds, 'seconds');
+							data[index].human = secondsduration.humanize();
+						}
+						var	colheaders = [
+								'TID',
+								'Job',
+								'Task',
+								'Place',
+								'Machine',
+								'Name',
+								'Start',
+								'End',
+								'Time',
+								'Duration'
+							];
+						var	columns = [
+								{ data: 'tid', readOnly: true, className: "htCenter" },
+								{ data: 'job', readOnly: true, className: "htRight" },
+								{ data: 'task', readOnly: true, className: "htRight" },
+								{ data: 'place', readOnly: true, className: "htRight" },
+								{ data: 'machine', readOnly: true, className: "htRight" },
+								{ data: 'jobname', readOnly: true, className: "htLeft" },
+								{ data: 'start', readOnly: true, className: "htLeft" },
+								{ data: 'end', readOnly: true, className: "htLeft" },
+								{ data: 'time', readOnly: true, className: "htRight" },
+								{ data: 'human', readOnly: true, className: "htLeft" },
+							];
 						var	container = document.getElementById('details'),
 							settings = {
 								data: data,
 								rowHeaders: true,
-								colHeaders: ['TID', 'Job', 'Task', 'Place', 'Machine', 'Name', 'Start', 'End', 'Duration (s)'],
-								columns: [
-									{ data: 'tid', readOnly: true },
-									{ data: 'job', readOnly: true },
-									{ data: 'task', readOnly: true },
-									{ data: 'place', readOnly: true },
-									{ data: 'machine', readOnly: true },
-									{ data: 'jobname', readOnly: true },
-									{ data: 'start', readOnly: true },
-									{ data: 'end', readOnly: true },
-									{ data: 'duration', readOnly: true },
-								]
+								colHeaders: colheaders,
+								columns: columns,
 							},
 							hot;
 		  
 						hot = new Handsontable(container, settings);
 						hot.render();
 
-						var	summaryData = [];
+						var interval = $('#timeinterval').children(':selected').attr('value');
+						var timestart = $('#timestart').children(':selected').attr('value');
+						var timeend = $('#timeend').children(':selected').attr('value');
 
-						for (jobno in data) {
-							var job = data[jobno];
-							console.log(job);
-							var summary = null;
-							var index = 0;
-							for (index = 0; index < summaryData.length; index++) {
-								if (summaryData[index].jobname == job.jobname) {
-									summary = summaryData[index];
-									break;
-								}
-							}
-							if (summary == null) {
-								summary = {}; 
-								summary.jobname = job.jobname;
-								summary.total = 0;
-							}
-							summary.total = summary.total + job.duration;
-							console.log( index);
-							console.log( summary);
-							summaryData[index] = summary;
-						}
-
-						console.log( summaryData);
-						var	summaryContainer = document.getElementById('summary'),
-							summarySettings = {
-								data: summaryData,
-								rowHeaders: true,
-								colHeaders: ['Name', 'Total (s)'],
-								columns: [
-									{ data: 'jobname', readOnly: true },
-									{ data: 'total', readOnly: true },
-								]
-							},
-							summaryHot;
-		  
-						summaryHot = new Handsontable(summaryContainer, summarySettings);
-						summaryHot.render();
-
-						calendar(new Date($('#fromdate').val()), new Date($('#todate').val()), data); 
+						summary(data); 
+						calendar(
+							new Date($('#fromdate').val()),
+							new Date($('#todate').val()),
+							parseInt(interval),
+							parseInt(timestart),
+							parseInt(timeend),
+							data
+						);
 					},
 					error: function(xhr, status, error) {
 						alert('get: ' + status + ", " + error);

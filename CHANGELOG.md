@@ -4,6 +4,14 @@ OwnTracks Pista Release Notes
 ## Pista
 >Release date: 2015-05-17 
 
+Activo Tab Layout and Enhancements
+
+[NEW] Calendar view
+[NEW] Human friendly duration displays
+
+## Pista
+>Release date: 2015-05-17 
+
 Operations Tab Layout and Enhancements
 
 [NEW] hide details in Calendar view, offer details as mouseover
