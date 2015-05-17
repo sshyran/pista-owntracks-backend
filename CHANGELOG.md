@@ -8,6 +8,8 @@ Activo Tab Layout and Enhancements
 
 [NEW] Calendar view
 [NEW] Human friendly duration displays
+[NEW] View job history #23
+[NEW] Export job history #22
 
 ## Pista
 >Release date: 2015-05-17 
