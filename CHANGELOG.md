@@ -2,6 +2,13 @@ OwnTracks Pista Release Notes
 =============================
 
 ## Pista
+>Release date: 2015-05-18
+
+Add acl checks to api functions
+
+[FIX] getGeoJSON, getjoblist and getOperations
+
+## Pista
 >Release date: 2015-05-17 
 
 Activo Tab Layout and Enhancements

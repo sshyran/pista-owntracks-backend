@@ -1056,6 +1056,13 @@ def get_joblist():
     # needs LOTS of error handling
 
     usertid = data.get('usertid')
+    # check for usertid auth
+    current_user = request.auth[0]
+    usertids = getusertids(current_user)
+    if usertid not in usertids:
+        log.warn("User {0} is not authorized to request data for tid={1}".format(current_user, usertid))
+        return notauth(reason="Not authorized for this TID")
+
     userjid = data.get('userjid')
     userpid = data.get('userpid')
     usermid = data.get('usermid')
@@ -1075,6 +1082,14 @@ def get_operations():
     # needs LOTS of error handling
 
     usertid = data.get('usertid')
+
+    # check for usertid auth
+    current_user = request.auth[0]
+    usertids = getusertids(current_user)
+    if usertid not in usertids:
+        log.warn("User {0} is not authorized to request data for tid={1}".format(current_user, usertid))
+        return notauth(reason="Not authorized for this TID")
+
     from_date = data.get('fromdate')
     to_date = data.get('todate')
     tzname = data.get('tzname', 'UTC')
@@ -1096,6 +1111,13 @@ def get_geoJSON():
     # needs LOTS of error handling
 
     usertid = data.get('usertid')
+    # check for usertid auth
+    current_user = request.auth[0]
+    usertids = getusertids(current_user)
+    if usertid not in usertids:
+        log.warn("User {0} is not authorized to request data for tid={1}".format(current_user, usertid))
+        return notauth(reason="Not authorized for this TID")
+
     from_date = data.get('fromdate')
     to_date = data.get('todate')
     spacing = int(data.get('spacing', POINT_KM))
