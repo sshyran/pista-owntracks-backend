@@ -57,6 +57,7 @@ def coll2json(loc, alarm=None):
         'trip' : loc.trip,
         'alt'  : loc.alt,
         'vel'  : loc.vel,
+        '_demo' : True,
     }
 
     if alarm and loc.tid == 'dB':
