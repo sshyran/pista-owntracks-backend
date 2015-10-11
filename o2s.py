@@ -1195,6 +1195,8 @@ if m.get('ca_certs') is not None:   # use TLS
 
     if tls_version == 'tlsv1':
         tls_version = ssl.PROTOCOL_TLSv1
+    if tls_version == 'tlsv1.2':
+        tls_version = ssl.PROTOCOL_TLSv1_2
     if tls_version == 'sslv3':
         tls_version = ssl.PROTOCOL_SSLv3
 
