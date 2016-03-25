@@ -2,6 +2,8 @@
 
 ![Logo](static/images/pista/pista-logo.png)
 
+Note: this is **deprecated**; please use the [Recorder](http://github.com/owntracks/recorder) which is much more capable.
+
 The OwnTracks back-end is a set of components intended to work with the [owntracks.org](http://owntracks.org) apps for Android and iOS as well as the Greenwich, OwnTracks edition.
 
 This back-end superceeds what has so-far been known as `m2s`, but has, in all honesty, a focus on the OwnTracks Greenwich devices, so there are features here which will not be useful for app users. If you are an app user and wish to experiment with the OwnTracks back-end, read [Migration](#migration) before continuing.
